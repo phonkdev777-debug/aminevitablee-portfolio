@@ -66,11 +66,14 @@ html {
 body {
   font-family: var(--font-body);
   background: var(--bg-primary);
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.02) 0%, transparent 60%),
+    radial-gradient(ellipse at 50% 100%, rgba(255,255,255,0.01) 0%, transparent 50%);
   color: var(--text-primary);
   line-height: 1.6;
   overflow-x: hidden;
   position: relative;
-  /* GPU compositing for smoother scroll */
+  /* GPU compositing for smooth scroll */
   -webkit-overflow-scrolling: touch;
 }
 
@@ -124,6 +127,63 @@ button {
   pointer-events: none;
 }
 
+/* ─── CINEMATIC OVERLAYS ────────────────────────────────────── */
+
+/* Film grain — subtle noise texture, pure CSS, 60fps GPU animated */
+.cinematic-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  animation: grainShift 0.5s steps(4) infinite;
+  will-change: transform;
+}
+
+@keyframes grainShift {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-2px, 1px); }
+  50%  { transform: translate(1px, -1px); }
+  75%  { transform: translate(-1px, 2px); }
+  100% { transform: translate(2px, -2px); }
+}
+
+/* Vignette — dark edges for cinematic depth */
+.cinematic-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 50%,
+    rgba(0, 0, 0, 0.35) 100%
+  );
+}
+
+/* Ambient gradient — very slow subtle color shift */
+.cinematic-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(255,255,255,0.015) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(255,255,255,0.01) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.008) 0%, transparent 60%);
+  animation: ambientDrift 20s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes ambientDrift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-20px, 10px) scale(1.02); }
+  100% { transform: translate(10px, -15px) scale(0.98); }
+}
+
 /* ─── MOUSE GLOW ────────────────────────────────────────────── */
 #mouse-glow {
   position: fixed;
@@ -143,6 +203,9 @@ button {
   position: relative;
   z-index: 2;
   padding: var(--section-padding) var(--side-pad);
+  /* Performance: skip layout for off-screen sections */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 800px;
 }
 
 .container {
@@ -179,8 +242,9 @@ button {
   border: var(--glass-border);
   border-radius: 16px;
   transition: all var(--duration-normal) var(--ease-smooth);
-  /* GPU accelerated */
-  will-change: transform, box-shadow;
+  /* GPU compositing + layout containment */
+  will-change: transform;
+  contain: layout style;
 }
 
 .glass:hover {
@@ -1184,5 +1248,14 @@ button {
   [data-reveal] {
     opacity: 1;
     transform: none;
+  }
+
+  .cinematic-grain {
+    animation: none;
+    opacity: 0;
+  }
+
+  .cinematic-ambient {
+    animation: none;
   }
 }
