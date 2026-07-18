@@ -135,61 +135,186 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     PARTICLE CANVAS — optimized for 60fps + low RAM
-     - Reduced particle count (35 vs 60)
-     - Removed O(n²) connection lines (biggest CPU hog)
-     - Pre-computed values, no string concat in hot loop
-     - Uses fillRect for faster rendering vs arc()
+     DEEP SPACE CANVAS — premium starfield + constellations
+     Renders hundreds of stars, soft bloom on bright ones,
+     constellation lines around edges, all monochrome.
+     Optimized: Float32Arrays, fillRect, no GC in hot loop.
   ═══════════════════════════════════════════════════════════ */
   function initParticles() {
     var canvas = document.getElementById('particles-canvas');
     if (!canvas) return;
 
     var ctx = canvas.getContext('2d', { alpha: true });
-    var PARTICLE_COUNT = 35;
     var animFrameId;
     var w, h;
 
-    // Flat arrays instead of objects — less GC pressure
-    var px = new Float32Array(PARTICLE_COUNT);
-    var py = new Float32Array(PARTICLE_COUNT);
-    var pvx = new Float32Array(PARTICLE_COUNT);
-    var pvy = new Float32Array(PARTICLE_COUNT);
-    var pr = new Float32Array(PARTICLE_COUNT);
-    var po = new Float32Array(PARTICLE_COUNT);
+    // ── Star config ──
+    var STAR_COUNT = 280;
+    var BRIGHT_STAR_CHANCE = 0.06; // ~6% of stars get glow bloom
+    var EDGE_MARGIN = 0.2; // edges where constellations appear (20%)
+
+    // ── Star data (flat arrays for zero GC) ──
+    var sx = new Float32Array(STAR_COUNT);
+    var sy = new Float32Array(STAR_COUNT);
+    var sr = new Float32Array(STAR_COUNT);   // radius
+    var so = new Float32Array(STAR_COUNT);   // base opacity
+    var sb = new Uint8Array(STAR_COUNT);     // is bright? (0 or 1)
+    var st = new Float32Array(STAR_COUNT);   // twinkle phase
+
+    // ── Constellation data ──
+    var CONSTELLATION_MAX_LINES = 30;
+    var clx1 = new Float32Array(CONSTELLATION_MAX_LINES);
+    var cly1 = new Float32Array(CONSTELLATION_MAX_LINES);
+    var clx2 = new Float32Array(CONSTELLATION_MAX_LINES);
+    var cly2 = new Float32Array(CONSTELLATION_MAX_LINES);
+    var clo = new Float32Array(CONSTELLATION_MAX_LINES); // opacity
+    var constellationCount = 0;
 
     function resize() {
       w = canvas.width = window.innerWidth;
       h = canvas.height = window.innerHeight;
+      generateStars();
+      generateConstellations();
     }
+
+    function generateStars() {
+      for (var i = 0; i < STAR_COUNT; i++) {
+        sx[i] = Math.random() * w;
+        sy[i] = Math.random() * h;
+
+        // Size distribution: most are tiny, very few large
+        var roll = Math.random();
+        if (roll < 0.7) {
+          sr[i] = 0.3 + Math.random() * 0.4;       // tiny (70%)
+        } else if (roll < 0.92) {
+          sr[i] = 0.6 + Math.random() * 0.5;       // small (22%)
+        } else if (roll < 0.98) {
+          sr[i] = 0.9 + Math.random() * 0.6;       // medium (6%)
+        } else {
+          sr[i] = 1.2 + Math.random() * 0.8;       // bright (2%)
+        }
+
+        // Bright stars with glow
+        sb[i] = (Math.random() < BRIGHT_STAR_CHANCE) ? 1 : 0;
+
+        // Opacity — dimmer overall, brighter if marked
+        so[i] = sb[i]
+          ? 0.5 + Math.random() * 0.4
+          : 0.08 + Math.random() * 0.25;
+
+        // Twinkle phase (subtle oscillation)
+        st[i] = Math.random() * Math.PI * 2;
+      }
+    }
+
+    function generateConstellations() {
+      constellationCount = 0;
+      var maxDist = Math.min(w, h) * 0.12; // max line length
+
+      // Find stars in edge/corner regions only
+      var edgeStars = [];
+      for (var i = 0; i < STAR_COUNT; i++) {
+        var nx = sx[i] / w;  // normalized 0-1
+        var ny = sy[i] / h;
+
+        // Is it in an edge/corner region?
+        var inEdge = (
+          nx < EDGE_MARGIN || nx > (1 - EDGE_MARGIN) ||
+          ny < EDGE_MARGIN || ny > (1 - EDGE_MARGIN)
+        );
+
+        // Prefer corners even more
+        var inCorner = (
+          (nx < EDGE_MARGIN && ny < EDGE_MARGIN) ||
+          (nx > 1 - EDGE_MARGIN && ny < EDGE_MARGIN) ||
+          (nx < EDGE_MARGIN && ny > 1 - EDGE_MARGIN) ||
+          (nx > 1 - EDGE_MARGIN && ny > 1 - EDGE_MARGIN)
+        );
+
+        if (inEdge || inCorner) {
+          edgeStars.push(i);
+        }
+      }
+
+      // Connect nearby edge stars
+      for (var a = 0; a < edgeStars.length && constellationCount < CONSTELLATION_MAX_LINES; a++) {
+        var ai = edgeStars[a];
+        var bestDist = maxDist;
+        var bestIdx = -1;
+
+        for (var b = a + 1; b < edgeStars.length; b++) {
+          var bi = edgeStars[b];
+          var dx = sx[ai] - sx[bi];
+          var dy = sy[ai] - sy[bi];
+          var dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < bestDist && dist > 20) {
+            bestDist = dist;
+            bestIdx = bi;
+          }
+        }
+
+        if (bestIdx >= 0) {
+          var idx = constellationCount;
+          clx1[idx] = sx[ai];
+          cly1[idx] = sy[ai];
+          clx2[idx] = sx[bestIdx];
+          cly2[idx] = sy[bestIdx];
+          clo[idx] = 0.04 + Math.random() * 0.03; // ultra-low opacity
+          constellationCount++;
+        }
+      }
+    }
+
     resize();
     window.addEventListener('resize', resize, { passive: true });
 
-    // Initialize particles
-    for (var i = 0; i < PARTICLE_COUNT; i++) {
-      px[i] = Math.random() * w;
-      py[i] = Math.random() * h;
-      pvx[i] = (Math.random() - 0.5) * 0.25;
-      pvy[i] = (Math.random() - 0.5) * 0.25;
-      pr[i] = Math.random() * 1.0 + 0.4;
-      po[i] = Math.random() * 0.2 + 0.04;
-    }
+    // ── Render loop ──
+    var time = 0;
 
     function animate() {
+      time += 0.016; // ~60fps time step
       ctx.clearRect(0, 0, w, h);
 
-      for (var i = 0; i < PARTICLE_COUNT; i++) {
-        // Update
-        px[i] += pvx[i];
-        py[i] += pvy[i];
-        if (px[i] < 0) px[i] = w;
-        if (px[i] > w) px[i] = 0;
-        if (py[i] < 0) py[i] = h;
-        if (py[i] > h) py[i] = 0;
+      // Draw constellation lines first (behind stars)
+      for (var c = 0; c < constellationCount; c++) {
+        ctx.beginPath();
+        ctx.moveTo(clx1[c], cly1[c]);
+        ctx.lineTo(clx2[c], cly2[c]);
+        ctx.strokeStyle = 'rgba(255,255,255,' + clo[c] + ')';
+        ctx.lineWidth = 0.4;
+        ctx.stroke();
+      }
 
-        // Draw — fillRect is faster than arc for tiny dots
-        ctx.fillStyle = 'rgba(255,255,255,' + po[i] + ')';
-        ctx.fillRect(px[i], py[i], pr[i], pr[i]);
+      // Draw constellation vertices (tiny dots at connection points)
+      for (var c = 0; c < constellationCount; c++) {
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        ctx.fillRect(clx1[c] - 0.5, cly1[c] - 0.5, 1, 1);
+        ctx.fillRect(clx2[c] - 0.5, cly2[c] - 0.5, 1, 1);
+      }
+
+      // Draw stars
+      for (var i = 0; i < STAR_COUNT; i++) {
+        // Subtle twinkle — sinusoidal brightness oscillation
+        var twinkle = Math.sin(time * (0.5 + st[i] * 0.3) + st[i]) * 0.15;
+        var alpha = Math.max(0.02, so[i] + twinkle);
+
+        ctx.fillStyle = 'rgba(255,255,255,' + alpha + ')';
+        ctx.fillRect(sx[i], sy[i], sr[i], sr[i]);
+
+        // Bloom glow for bright stars — soft radial gradient
+        if (sb[i]) {
+          var glowSize = sr[i] * 6;
+          var grd = ctx.createRadialGradient(
+            sx[i], sy[i], 0,
+            sx[i], sy[i], glowSize
+          );
+          grd.addColorStop(0, 'rgba(255,255,255,' + (alpha * 0.3) + ')');
+          grd.addColorStop(0.3, 'rgba(255,255,255,' + (alpha * 0.08) + ')');
+          grd.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = grd;
+          ctx.fillRect(sx[i] - glowSize, sy[i] - glowSize, glowSize * 2, glowSize * 2);
+        }
       }
 
       animFrameId = requestAnimationFrame(animate);
@@ -197,7 +322,7 @@
 
     animate();
 
-    // Pause when tab is hidden — saves battery + RAM
+    // Pause when tab hidden
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) {
         cancelAnimationFrame(animFrameId);
