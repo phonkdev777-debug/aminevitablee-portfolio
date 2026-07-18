@@ -735,15 +735,47 @@ button {
 
 .project-card-image {
   position: relative;
-  padding: clamp(28px, 4vw, 40px);
   display: flex;
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, rgba(255,255,255,0.02), rgba(255,255,255,0.05));
-  min-height: 160px;
+  overflow: hidden;
 }
 
-/* Project icon — glow ring + SVG */
+/* Real project screenshots */
+.project-screenshot {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+  filter: brightness(0.92) contrast(1.05);
+  transition: filter var(--duration-normal) var(--ease-smooth),
+              transform var(--duration-slow) var(--ease-smooth);
+}
+
+.project-card:hover .project-screenshot {
+  filter: brightness(1) contrast(1.08);
+  transform: scale(1.03);
+}
+
+/* Subtle bottom fade on screenshots */
+.project-screenshot + .project-card-content::before {
+  display: none;
+}
+
+.project-card-image::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(transparent, rgba(5,5,7,0.6));
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Fallback icon group for cards without screenshots */
 .project-icon-group {
   position: relative;
   display: flex;
